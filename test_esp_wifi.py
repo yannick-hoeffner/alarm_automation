@@ -10,8 +10,8 @@ UDP_PORT = 64000      # Must match targetPort on the ESP8266
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(0.5)
 sock.bind((UDP_IP, UDP_PORT))
-ps1 = Path(r"./test_alarm2.ps1").resolve()
-assert ps1.is_file(), f"PowerShell script not found: {ps1}"
+# ps1 = Path(r"./test_alarm2.ps1").resolve()
+# assert ps1.is_file(), f"PowerShell script not found: {ps1}"
 # cmd = [
 #     "powershell",
 #     "-NoProfile",
