@@ -1,4 +1,5 @@
 **/build/
+**secrets.h
 
 # Kicad
 alarm_circuit/.history/
