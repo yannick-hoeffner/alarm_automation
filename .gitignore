@@ -1,5 +1,5 @@
-build/
+**/build/
 
 # Kicad
-alarm_circuit/.history/**
+alarm_circuit/.history/
 alarm_circuit/**.lck
