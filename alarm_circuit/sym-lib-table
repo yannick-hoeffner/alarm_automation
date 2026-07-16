@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "pager_parts") (type "KiCad") (uri "${KIPRJMOD}/pager_parts.kicad_sym") (options "") (descr ""))
+)
