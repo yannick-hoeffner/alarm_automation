@@ -17,20 +17,24 @@ const unsigned long alarm_on_time_ms = 5000; // number of ms the alarm led shoul
 
 bool alarm_received = false;
 
-const int button_pin = 4; // use GPIO 4 == D2
+const int activate_button_pin = 4; // use GPIO 4 == D2
 const int relay_pin = 5; //use GPIO 5 == D1
+const int disable_button_pin = 14; // use GPIO 14 = D5
 
 void setup() {   
-  // initialize inbuilt LED pin as an output.
   pinMode(relay_pin, OUTPUT);
-  pinMode(button_pin, INPUT); 
-
+  pinMode(activate_button_pin, INPUT); 
+  pinMode(disable_button_pin, INPUT);
   
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(STASSID, STAPSK);
   while (WiFi.status() != WL_CONNECTED) {
-    if (digitalRead(button_pin)){
+    if (digitalRead(disable_button_pin)){
+      digitalWrite(relay_pin, LOW);
+      alarm_received = false;
+    }
+    else if (digitalRead(activate_button_pin)){
       // switch the relay
       digitalWrite(relay_pin, HIGH);
       // turn on timer for alarm reset
@@ -61,7 +65,11 @@ void loop() {
     }
   }
   
-  if (digitalRead(button_pin)){
+
+  if (digitalRead(disable_button_pin)){
+    digitalWrite(relay_pin, LOW);
+    alarm_received = false;
+  } else if (digitalRead(activate_button_pin)){
     // switch the relay
     digitalWrite(relay_pin, HIGH);
     // turn on timer for alarm reset
