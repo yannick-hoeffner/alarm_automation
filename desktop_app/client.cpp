@@ -8,16 +8,20 @@
 #include <iostream>
 #include <iomanip>
 #include <chrono>
+#include <cstring>
+#include <windows.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
 const char* UDP_IP = "0.0.0.0";
 const int UDP_PORT = 64000;
 
+const char* ALARM_MESSAGE = "alarm received";
+const char* ALARM_CLEAR_MESSAGE = "alarm cleared";
+
 /**
- * Gets the current time in seconds.
+ * Gets the current time in seconds using mononical clock.
  * @return The current time in seconds.
- * TODO: refactor
  */
 double getTime()
 {
@@ -88,6 +92,35 @@ SOCKET initSocket(){
     return sock;
 }
 
+/**
+ * Starts a new process with the given application name.
+ * @param lpApplicationName See https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+ * for more information about the name parameter.
+ * @return A PROCESS_INFORMATION structure containing information about the newly created process.
+ */
+void startProcess(LPCTSTR lpApplicationName, PROCESS_INFORMATION* pi) {
+    // additional information not set
+    STARTUPINFO si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    // struct for receiving process information
+    ZeroMemory(pi, sizeof(*pi));
+
+    if (!CreateProcess( lpApplicationName,   // the path
+        NULL,           // No Command line
+        NULL,           // Process handle not inheritable
+        NULL,           // Thread handle not inheritable
+        FALSE,          // Set handle inheritance to FALSE
+        0,              // No creation flags
+        NULL,           // Use parent's environment block
+        NULL,           // Use parent's starting directory 
+        &si,            // Pointer to STARTUPINFO structure
+        pi             // Pointer to PROCESS_INFORMATION structure
+    )) {
+        std::cerr << "CreateProcess failed: " << GetLastError() << std::endl;
+    }
+}
+
 int main()
 {
     SOCKET sock = initSocket();
@@ -96,19 +129,35 @@ int main()
     }
     std::cout << "Listening for UDP packets on port " << UDP_PORT << "..." << std::endl;
 
+    // TODO: Handle Ctrl+C to exit gracefully
     SetConsoleCtrlHandler([](DWORD) -> BOOL {
         std::cout << "\nExiting..." << std::endl;
         return FALSE; // Let default handler terminate
     }, TRUE);
 
+    // vars for recvfrom
     char buf[1024];
     sockaddr_in senderAddr{};
     int senderAddrSize = sizeof(senderAddr);
 
-    double lastReceivedTime = 0.0;
-    lastReceivedTime = getTime();
+    // vars for process management
+    double lastAlarmTime = 0.0;
+    PROCESS_INFORMATION pi{};
+    bool processRunning = false;
 
     while (true) {
+        if (processRunning){
+            // check whether the process is still running
+            DWORD exitCode;
+            if (GetExitCodeProcess(pi.hProcess, &exitCode)){
+                if (exitCode != STILL_ACTIVE){
+                    std::cout << "Alarm process has exited with code: " << exitCode << std::endl;
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                    processRunning = false;
+                }
+            }
+        }
         int recvLen = recvfrom(sock, buf, sizeof(buf) - 1, 0,
                                (sockaddr*)&senderAddr, &senderAddrSize);
 
@@ -133,12 +182,45 @@ int main()
         int senderPort = ntohs(senderAddr.sin_port);
 
         printResult(senderIP, senderPort, buf);
+        if (strcmp(buf, ALARM_MESSAGE) == 0) {
+            // =================================
+            // handle alarm
+            // =================================
+            double currentTime = getTime();
+            std::cout << "Alarm received!" << lastAlarmTime << " -> " << currentTime << std::endl;
 
-        lastReceivedTime = getTime();
+            if (!processRunning){
+                // The ESP sends multiple alarm messages per second,
+                // to avoid informing about the same alarm multiple times, 
+                // we only start the process if at least 60 seconds have passed since the last alarm.
+                if (currentTime - lastAlarmTime >= 10.0) { // TODO: Change back to 60.0 for production
+                    startProcess(TEXT("alarm.exe"), &pi);
+                    processRunning = true;
+                }
+            }
+
+            lastAlarmTime = currentTime;
+        }else if(strcmp(buf, ALARM_CLEAR_MESSAGE) == 0){
+            // =================================
+            // handle alarm clear
+            // =================================
+            std::cout << "Alarm cleared!" << std::endl;
+            if (processRunning){
+                TerminateProcess(pi.hProcess, 0);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                processRunning = false;
+                std::cout << "Alarm process terminated." << std::endl;
+            }
+            // alarm cleared is an immediate indicator that every
+            // following alarm message is a new alarm, so we reset lastAlarmTime
+            lastAlarmTime = 0.0;
+        }
     }
 
 
     closesocket(sock);
     WSACleanup();
+    std::cout << "Socket closed and Winsock cleaned up." << std::endl;
     return 0;
 }

@@ -4,3 +4,6 @@
 # Kicad
 alarm_circuit/.history/
 alarm_circuit/**.lck
+
+# vscode
+.vscode/

@@ -7,6 +7,7 @@
 IPAddress target_ip(192, 168, 2, 64); // IPv4 address of desktop computer running the alarm application
 unsigned int target_port = 64000; 
 char alarm_message[] = "alarm received\r\n";
+char clear_message[] = "alarm cleared\r\n";
 unsigned long last_send_time = 0;
 const unsigned long min_time_between_ms = 100; 
 
@@ -20,6 +21,12 @@ bool alarm_received = false;
 const int activate_button_pin = 4; // use GPIO 4 == D2
 const int relay_pin = 5; //use GPIO 5 == D1
 const int disable_button_pin = 14; // use GPIO 14 = D5
+
+void udp_send_mssg(char* mssg){
+  Udp.beginPacket(target_ip, target_port);
+  Udp.write(mssg);
+  Udp.endPacket();
+}
 
 void setup() {   
   pinMode(relay_pin, OUTPUT);
@@ -47,9 +54,7 @@ void setup() {
   // if alarm received before boot, immediately send udp
   if (alarm_received){
     last_send_time = millis();
-    Udp.beginPacket(target_ip, target_port);
-    Udp.write(alarm_message);
-    Udp.endPacket();
+    udp_send_mssg(alarm_message);
   }
 }
 
@@ -62,13 +67,18 @@ void loop() {
       last_alarm_received_time = current_millis;
       digitalWrite(relay_pin, LOW);    // turn the LED off by making the  pin 13 LOW
       alarm_received = false;
+      udp_send_mssg(clear_message);
     }
   }
   
 
   if (digitalRead(disable_button_pin)){
     digitalWrite(relay_pin, LOW);
-    alarm_received = false;
+    if (alarm_received){
+      alarm_received = false;
+      udp_send_mssg(clear_message);
+    }
+    
   } else if (digitalRead(activate_button_pin)){
     // switch the relay
     digitalWrite(relay_pin, HIGH);
@@ -78,9 +88,7 @@ void loop() {
 
     if (current_millis - last_send_time >= min_time_between_ms){
       last_send_time = current_millis;
-      Udp.beginPacket(target_ip, target_port);
-      Udp.write(alarm_message);
-      Udp.endPacket();
+      udp_send_mssg(alarm_message);
     }
   }
 }
