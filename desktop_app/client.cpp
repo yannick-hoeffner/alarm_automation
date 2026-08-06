@@ -3,6 +3,10 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iostream>
@@ -11,13 +15,17 @@
 #include <cstring>
 #include <windows.h>
 
+#include "logger.hpp"
+
 #pragma comment(lib, "ws2_32.lib")
 
-const char* UDP_IP = "0.0.0.0";
+const char *UDP_IP = "0.0.0.0";
 const int UDP_PORT = 64000;
 
-const char* ALARM_MESSAGE = "alarm received";
-const char* ALARM_CLEAR_MESSAGE = "alarm cleared";
+const char *ALARM_MESSAGE = "alarm received";
+const char *ALARM_CLEAR_MESSAGE = "alarm cleared";
+
+RotatingLogger logger("udp_alarm_listener.log");
 
 /**
  * Gets the current time in seconds using mononical clock.
@@ -26,9 +34,10 @@ const char* ALARM_CLEAR_MESSAGE = "alarm cleared";
 double getTime()
 {
     return static_cast<double>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()
-        ).count()) / 1000.0;
+               std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+                   .count()) /
+           1000.0;
 }
 
 /**
@@ -37,21 +46,9 @@ double getTime()
  * @param senderPort The port of the sender.
  * @param buf The received data.
  */
-void printResult(char* senderIP, int senderPort, char* buf)
+void printResult(char *senderIP, int senderPort, char *buf)
 {
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    std::cout << "["
-              << st.wYear << "-"
-              << std::setfill('0') << std::setw(2) << st.wMonth << "-"
-              << std::setfill('0') << std::setw(2) << st.wDay << " "
-              << std::setfill('0') << std::setw(2) << st.wHour << ":"
-              << std::setfill('0') << std::setw(2) << st.wMinute << ":"
-              << std::setfill('0') << std::setw(2) << st.wSecond << "."
-              << std::setfill('0') << std::setw(3) << st.wMilliseconds
-              << "] ";
-    std::cout << "Received from " << senderIP << ":" << senderPort
-                  << " -> " << buf << std::endl;
+    logger.log("Received from " + std::string(senderIP) + ":" + std::to_string(senderPort) + " -> " + std::string(buf));
 }
 
 /**
@@ -60,30 +57,34 @@ void printResult(char* senderIP, int senderPort, char* buf)
  *
  * @return A valid SOCKET on success, or INVALID_SOCKET on failure.
  */
-SOCKET initSocket(){
+SOCKET initSocket()
+{
     WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "WSAStartup failed: " << WSAGetLastError() << std::endl;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    {
+        logger.log("WSAStartup failed: " + std::to_string(WSAGetLastError()));
         return INVALID_SOCKET;
     }
 
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET) {
-        std::cerr << "Socket creation failed: " << WSAGetLastError() << std::endl;
+    if (sock == INVALID_SOCKET)
+    {
+        logger.log("Socket creation failed: " + std::to_string(WSAGetLastError()));
         WSACleanup();
         return INVALID_SOCKET;
     }
 
     DWORD timeout = 500;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
 
     sockaddr_in bindAddr{};
     bindAddr.sin_family = AF_INET;
     bindAddr.sin_port = htons(UDP_PORT);
     bindAddr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR) {
-        std::cerr << "Bind failed: " << WSAGetLastError() << std::endl;
+    if (bind(sock, (sockaddr *)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
+    {
+        logger.log("Failed to bind socket: " + std::to_string(WSAGetLastError()));
         closesocket(sock);
         WSACleanup();
         return 1;
@@ -98,7 +99,8 @@ SOCKET initSocket(){
  * for more information about the name parameter.
  * @return A PROCESS_INFORMATION structure containing information about the newly created process.
  */
-void startProcess(LPCTSTR lpApplicationName, PROCESS_INFORMATION* pi) {
+void startProcess(LPCTSTR lpApplicationName, PROCESS_INFORMATION *pi)
+{
     // additional information not set
     STARTUPINFO si;
     ZeroMemory(&si, sizeof(si));
@@ -106,34 +108,56 @@ void startProcess(LPCTSTR lpApplicationName, PROCESS_INFORMATION* pi) {
     // struct for receiving process information
     ZeroMemory(pi, sizeof(*pi));
 
-    if (!CreateProcess( lpApplicationName,   // the path
-        NULL,           // No Command line
-        NULL,           // Process handle not inheritable
-        NULL,           // Thread handle not inheritable
-        FALSE,          // Set handle inheritance to FALSE
-        0,              // No creation flags
-        NULL,           // Use parent's environment block
-        NULL,           // Use parent's starting directory 
-        &si,            // Pointer to STARTUPINFO structure
-        pi             // Pointer to PROCESS_INFORMATION structure
-    )) {
-        std::cerr << "CreateProcess failed: " << GetLastError() << std::endl;
+    if (!CreateProcess(lpApplicationName, // the path
+                       NULL,              // No Command line
+                       NULL,              // Process handle not inheritable
+                       NULL,              // Thread handle not inheritable
+                       FALSE,             // Set handle inheritance to FALSE
+                       0,                 // No creation flags
+                       NULL,              // Use parent's environment block
+                       NULL,              // Use parent's starting directory
+                       &si,               // Pointer to STARTUPINFO structure
+                       pi                 // Pointer to PROCESS_INFORMATION structure
+                       ))
+    {
+        logger.log("CreateProcess failed: " + std::to_string(GetLastError()));
     }
 }
 
-int main()
+/**
+ * Ensures that only a single instance of the application is running.
+ * @return true if this is the only instance, false if another instance is already running.
+ */
+bool guaranteeSingleInstance()
 {
-    SOCKET sock = initSocket();
-    if (sock == INVALID_SOCKET){
+    // Named mutex - system-wide unique
+    HANDLE mutex = CreateMutexA(NULL, FALSE, "Global\\UDP-ALARM-LISTENER-MUTEX");
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        // Already running
+        CloseHandle(mutex);
+        return false;
+    }
+    return true;
+}
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
+{
+    if (!guaranteeSingleInstance())
+    {
+        // std::cerr << "Another instance of the application is already running." << std::endl;
         return 1;
     }
-    std::cout << "Listening for UDP packets on port " << UDP_PORT << "..." << std::endl;
 
-    // TODO: Handle Ctrl+C to exit gracefully
-    SetConsoleCtrlHandler([](DWORD) -> BOOL {
-        std::cout << "\nExiting..." << std::endl;
-        return FALSE; // Let default handler terminate
-    }, TRUE);
+    logger.log("Application started");
+
+    SOCKET sock = initSocket();
+    if (sock == INVALID_SOCKET)
+    {
+        return 1;
+    }
+    logger.log("Socket initialized and bound to port " + std::to_string(UDP_PORT));
 
     // vars for recvfrom
     char buf[1024];
@@ -145,13 +169,17 @@ int main()
     PROCESS_INFORMATION pi{};
     bool processRunning = false;
 
-    while (true) {
-        if (processRunning){
+    while (true)
+    {
+        if (processRunning)
+        {
             // check whether the process is still running
             DWORD exitCode;
-            if (GetExitCodeProcess(pi.hProcess, &exitCode)){
-                if (exitCode != STILL_ACTIVE){
-                    std::cout << "Alarm process has exited with code: " << exitCode << std::endl;
+            if (GetExitCodeProcess(pi.hProcess, &exitCode))
+            {
+                if (exitCode != STILL_ACTIVE)
+                {
+                    logger.log("Alarm process has exited with code: " + std::to_string(exitCode));
                     CloseHandle(pi.hProcess);
                     CloseHandle(pi.hThread);
                     processRunning = false;
@@ -159,20 +187,23 @@ int main()
             }
         }
         int recvLen = recvfrom(sock, buf, sizeof(buf) - 1, 0,
-                               (sockaddr*)&senderAddr, &senderAddrSize);
+                               (sockaddr *)&senderAddr, &senderAddrSize);
 
-        if (recvLen == SOCKET_ERROR) {
+        if (recvLen == SOCKET_ERROR)
+        {
             int err = WSAGetLastError();
-            if (err == WSAETIMEDOUT) {
+            if (err == WSAETIMEDOUT)
+            {
                 continue;
             }
-            std::cerr << "recvfrom failed: " << err << std::endl;
+            logger.log("recvfrom failed: " + std::to_string(err));
             break;
         }
 
         buf[recvLen] = '\0';
         // trim recv string
-        while (recvLen > 0 && (buf[recvLen - 1] == '\n' || buf[recvLen - 1] == '\r' || buf[recvLen - 1] == ' ')) {
+        while (recvLen > 0 && (buf[recvLen - 1] == '\n' || buf[recvLen - 1] == '\r' || buf[recvLen - 1] == ' '))
+        {
             buf[--recvLen] = '\0';
         }
 
@@ -182,35 +213,42 @@ int main()
         int senderPort = ntohs(senderAddr.sin_port);
 
         printResult(senderIP, senderPort, buf);
-        if (strcmp(buf, ALARM_MESSAGE) == 0) {
+        if (strcmp(buf, ALARM_MESSAGE) == 0)
+        {
             // =================================
             // handle alarm
             // =================================
             double currentTime = getTime();
-            std::cout << "Alarm received!" << lastAlarmTime << " -> " << currentTime << std::endl;
+            logger.log("Alarm received at " + std::to_string(currentTime) + " last alarm:" + std::to_string(lastAlarmTime));
 
-            if (!processRunning){
+            if (!processRunning)
+            {
                 // The ESP sends multiple alarm messages per second,
-                // to avoid informing about the same alarm multiple times, 
-                // we only start the process if at least 60 seconds have passed since the last alarm.
-                if (currentTime - lastAlarmTime >= 10.0) { // TODO: Change back to 60.0 for production
+                // to avoid informing about the same alarm multiple times,
+                // we only start the process if at least 20 seconds have passed since the last alarm.
+                if (currentTime - lastAlarmTime >= 20.0)
+                {
+                    logger.log("Starting alarm process.");
                     startProcess(TEXT("alarm.exe"), &pi);
                     processRunning = true;
                 }
             }
 
             lastAlarmTime = currentTime;
-        }else if(strcmp(buf, ALARM_CLEAR_MESSAGE) == 0){
+        }
+        else if (strcmp(buf, ALARM_CLEAR_MESSAGE) == 0)
+        {
             // =================================
             // handle alarm clear
             // =================================
-            std::cout << "Alarm cleared!" << std::endl;
-            if (processRunning){
+            logger.log("Alarm cleared at " + std::to_string(getTime()));
+            if (processRunning)
+            {
                 TerminateProcess(pi.hProcess, 0);
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
                 processRunning = false;
-                std::cout << "Alarm process terminated." << std::endl;
+                logger.log("Alarm process terminated.");
             }
             // alarm cleared is an immediate indicator that every
             // following alarm message is a new alarm, so we reset lastAlarmTime
@@ -218,9 +256,8 @@ int main()
         }
     }
 
-
     closesocket(sock);
     WSACleanup();
-    std::cout << "Socket closed and Winsock cleaned up." << std::endl;
+    logger.log("Application exiting.");
     return 0;
 }
