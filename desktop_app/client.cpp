@@ -28,7 +28,7 @@ const char *ALARM_CLEAR_MESSAGE = "alarm cleared";
 RotatingLogger logger("udp_alarm_listener.log");
 
 /**
- * Gets the current time in seconds using mononical clock.
+ * Gets the current time in seconds using monotonical clock.
  * @return The current time in seconds.
  */
 double getTime()
@@ -70,7 +70,6 @@ SOCKET initSocket()
     if (sock == INVALID_SOCKET)
     {
         logger.log("Socket creation failed: " + std::to_string(WSAGetLastError()));
-        WSACleanup();
         return INVALID_SOCKET;
     }
 
@@ -82,15 +81,27 @@ SOCKET initSocket()
     bindAddr.sin_port = htons(UDP_PORT);
     bindAddr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sock, (sockaddr *)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
+    bool successfully_bound = false;
+    for (int i = 0; i < 5; i++)
     {
-        logger.log("Failed to bind socket: " + std::to_string(WSAGetLastError()));
-        closesocket(sock);
-        WSACleanup();
-        return 1;
+        if (bind(sock, (sockaddr *)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
+        {
+            logger.log("Failed to bind socket "+ std::to_string(i+1)+ "-th attempt: " + std::to_string(WSAGetLastError()));
+            Sleep(5000); 
+        }
+        else
+        {
+            successfully_bound = true;
+            break;
+        }
     }
 
-    return sock;
+    if (successfully_bound){
+        return sock;
+    }else {
+        closesocket(sock);
+        return INVALID_SOCKET;
+    }
 }
 
 /**
@@ -146,7 +157,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 {
     if (!guaranteeSingleInstance())
     {
-        // std::cerr << "Another instance of the application is already running." << std::endl;
+        // TODO: this message can be written by multiple processes at the same time
+        //  to the same log file.... fix this
+        logger.log("Another instance of the application is already running.");
+        WSACleanup();
+        return 1;
+    }
+
+    HANDLE hEvent = CreateEventA(NULL, TRUE, FALSE, "UDP-ALARM-LISTENER-SHUTDOWN-EVENT");
+    if (hEvent == NULL)
+    {
+        logger.log("CreateEvent failed: " + std::to_string(GetLastError()));
+        WSACleanup();
         return 1;
     }
 
@@ -155,6 +177,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
     SOCKET sock = initSocket();
     if (sock == INVALID_SOCKET)
     {
+        logger.log("Socket initialization failed.");
+        WSACleanup();
         return 1;
     }
     logger.log("Socket initialized and bound to port " + std::to_string(UDP_PORT));
@@ -171,6 +195,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 
     while (true)
     {
+        if (WaitForSingleObject(hEvent, 0) == WAIT_OBJECT_0)
+        {
+            logger.log("Shutdown signal received. Exiting gracefully...");
+            break;
+        }
+
         if (processRunning)
         {
             // check whether the process is still running
@@ -257,6 +287,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
     }
 
     closesocket(sock);
+    CloseHandle(hEvent);
+    if (processRunning)
+    {
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        logger.log("Alarm process terminated.");
+    }
     WSACleanup();
     logger.log("Application exiting.");
     return 0;

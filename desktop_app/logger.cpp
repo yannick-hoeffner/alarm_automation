@@ -12,6 +12,9 @@ void RotatingLogger::log(const std::string &msg)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
 
+    // TODO: add length check for rotation
+    //auto length = msg.size();
+
     // Check size (approximate)
     if (m_file.tellp() > static_cast<std::streamoff>(m_maxSize))
     {
