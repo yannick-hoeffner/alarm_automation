@@ -7,3 +7,5 @@ alarm_circuit/**.lck
 
 # vscode
 .vscode/
+
+esp_test/

@@ -31,8 +31,8 @@ unsigned long alarm_start_time = 0;
 const unsigned long alarm_check_time_ms = 150; // number of ms the pin shoul be HIGH to be considered a real alarm
 const unsigned long alarm_on_time_ms = 5000; // number of ms the alarm light should stay on after an recv alarm
 
-IPAddress target_ip(192, 168, 2, 64); // IPv4 address of desktop computer running the alarm application
-unsigned int target_port = 64000; 
+IPAddress target_ip(SECRET_UDP_IP); // IPv4 address of desktop computer running the alarm application
+unsigned int target_port = SECRET_UDP_PORT; 
 char alarm_message[] = "alarm received\r\n";
 char clear_message[] = "alarm cleared\r\n";
 

@@ -11,4 +11,9 @@ The subdirectory `esp_alarm_udp` contains an Arduino-IDE project for the esp sof
 ## Desktop Software
 The subdirectory `desktop_app` contains a CMAKE-C++ project for a Windows desktop app that can receive the alarm information from the ESP and shows a big pop up.
 
+The desktop software uses Port 64000 for its communication. It is recommended to exclude this port from the dynamic port range with netsh:
+```powershell
+netsh interface ipv4 add excludedportrange udp 64000 1 persistent
+```
+
 

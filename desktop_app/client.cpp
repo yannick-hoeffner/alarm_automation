@@ -16,11 +16,12 @@
 #include <windows.h>
 
 #include "logger.hpp"
+#include "secrets.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
-const char *UDP_IP = "0.0.0.0";
-const int UDP_PORT = 64000;
+const char *UDP_IP = SECRET_UDP_IP;
+const int UDP_PORT = SECRET_UDP_PORT;
 
 const char *ALARM_MESSAGE = "alarm received";
 const char *ALARM_CLEAR_MESSAGE = "alarm cleared";
@@ -79,10 +80,10 @@ SOCKET initSocket()
     sockaddr_in bindAddr{};
     bindAddr.sin_family = AF_INET;
     bindAddr.sin_port = htons(UDP_PORT);
-    bindAddr.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, UDP_IP, &bindAddr.sin_addr.s_addr);
 
     bool successfully_bound = false;
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 500; i++)
     {
         if (bind(sock, (sockaddr *)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
         {
