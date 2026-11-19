@@ -260,7 +260,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
                 if (currentTime - lastAlarmTime >= 20.0)
                 {
                     logger.log("Starting alarm process.");
-                    startProcess(TEXT("alarm.exe"), &pi);
+                    startProcess(TEXT("alarm_window.exe"), &pi);
                     processRunning = true;
                 }
             }
